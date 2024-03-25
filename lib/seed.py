@@ -1,55 +1,67 @@
 #!/usr/bin/env python3
 
-from faker import Faker
-import random
+from sqlalchemy import create_engine, func
+from sqlalchemy import ForeignKey, Table, Column, Integer, String, DateTime
+from sqlalchemy.orm import relationship, backref
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.ext.associationproxy import association_proxy
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+engine = create_engine('sqlite:///many_to_many.db')
 
-from models import Game, Review
+Base = declarative_base()
 
-if __name__ == '__main__':
-    engine = create_engine('sqlite:///one_to_many.db')
-    Session = sessionmaker(bind=engine)
-    session = Session()
 
-    session.query(Game).delete()
-    session.query(Review).delete()
+class Game(Base):
+    __tablename__ = 'games'
 
-    fake = Faker()
+    id = Column(Integer(), primary_key=True)
+    title = Column(String())
+    genre = Column(String())
+    platform = Column(String())
+    price = Column(Integer())
+    created_at = Column(DateTime(), server_default=func.now())
+    updated_at = Column(DateTime(), onupdate=func.now())
 
-    genres = ['action', 'adventure', 'strategy',
-        'puzzle', 'first-person shooter', 'racing']
-    platforms = ['nintendo 64', 'gamecube', 'wii', 'wii u', 'switch',
-        'playstation', 'playstation 2', 'playstation 3', 'playstation 4',
-        'playstation 5', 'xbox', 'xbox 360', 'xbox one', 'pc']
+    users = relationship('User', secondary=game_user, back_populates='games')
+    reviews = relationship('Review', backref=backref('game'))
 
-    games = []
-    for i in range(50):
-        game = Game(
-            title=fake.unique.name(),
-            genre=random.choice(genres),
-            platform=random.choice(platforms),
-            price=random.randint(5, 60)
-        )
+    def __repr__(self):
+        return f'Game(id={self.id}, ' + \
+            f'title={self.title}, ' + \
+            f'platform={self.platform})'
 
-        # add and commit individually to get IDs back
-        session.add(game)
-        session.commit()
+class User(Base):
+    __tablename__ = 'users'
 
-        games.append(game)
+    id = Column(Integer(), primary_key=True)
+    name = Column(String())
+    created_at = Column(DateTime(), server_default=func.now())
+    updated_at = Column(DateTime(), onupdate=func.now())
 
-    reviews = []
-    for game in games:
-        for i in range(random.randint(1,5)):
-            review = Review(
-                score=random.randint(0, 10),
-                comment=fake.sentence(),
-                game_id=game.id
-            )
-
-            reviews.append(review)
     
-    session.bulk_save_objects(reviews)
-    session.commit()
-    session.close()
+    reviews = relationship('Review', back_populates='user')
+    games = association_proxy('reviews', 'game',
+        creator=lambda gm: Review(game=gm))
+
+    def __repr__(self):
+        return f'User(id={self.id}, ' + \
+            f'name={self.name})'
+
+class Review(Base):
+    __tablename__ = 'reviews'
+
+    id = Column(Integer(), primary_key=True)
+
+    score = Column(Integer())
+    comment = Column(String())
+    created_at = Column(DateTime(), server_default=func.now())
+    updated_at = Column(DateTime(), onupdate=func.now())
+
+    game_id = Column(Integer(), ForeignKey('games.id'))
+    user_id = Column(Integer(), ForeignKey('users.id'))
+
+
+    def __repr__(self):
+        return f'Review(id={self.id}, ' + \
+            f'score={self.score}, ' + \
+            f'game_id={self.game_id})'
